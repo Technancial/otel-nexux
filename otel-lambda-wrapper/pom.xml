@@ -66,6 +66,18 @@
     </dependency>
 
     <dependency>
+      <groupId>pe.soapros.otel</groupId>
+      <artifactId>otel-logs</artifactId>
+      <version>1.0-SNAPSHOT</version>
+    </dependency>
+
+    <dependency>
+      <groupId>pe.soapros.otel</groupId>
+      <artifactId>otel-metrics</artifactId>
+      <version>1.0-SNAPSHOT</version>
+    </dependency>
+
+    <dependency>
       <groupId>org.mockito</groupId>
       <artifactId>mockito-core</artifactId>
       <version>5.11.0</version>

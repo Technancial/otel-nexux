@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    
+    <!-- Console appender for local development -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+    
+    <!-- OpenTelemetry appender -->
+    <appender name="OTEL" class="pe.soapros.otel.logs.infrastructure.logback.OpenTelemetryLogbackAppender">
+        <instrumentationName>my-application</instrumentationName>
+    </appender>
+    
+    <!-- Root logger configuration -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="OTEL"/>
+    </root>
+    
+    <!-- Specific logger configurations -->
+    <logger name="pe.soapros.otel" level="DEBUG"/>
+    <logger name="io.opentelemetry" level="INFO"/>
+    
+</configuration>

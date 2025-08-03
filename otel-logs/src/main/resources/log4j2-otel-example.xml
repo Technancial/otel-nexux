@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration status="WARN">
+    
+    <Appenders>
+        <!-- Console appender for local development -->
+        <Console name="CONSOLE" target="SYSTEM_OUT">
+            <PatternLayout pattern="%d{HH:mm:ss.SSS} [%t] %-5level %logger{36} - %msg%n"/>
+        </Console>
+        
+        <!-- OpenTelemetry appender -->
+        <OpenTelemetry name="OTEL" instrumentationName="my-application">
+        </OpenTelemetry>
+    </Appenders>
+    
+    <Loggers>
+        <!-- Specific logger configurations -->
+        <Logger name="pe.soapros.otel" level="DEBUG" additivity="false">
+            <AppenderRef ref="CONSOLE"/>
+            <AppenderRef ref="OTEL"/>
+        </Logger>
+        
+        <Logger name="io.opentelemetry" level="INFO" additivity="false">
+            <AppenderRef ref="CONSOLE"/>
+            <AppenderRef ref="OTEL"/>
+        </Logger>
+        
+        <!-- Root logger -->
+        <Root level="INFO">
+            <AppenderRef ref="CONSOLE"/>
+            <AppenderRef ref="OTEL"/>
+        </Root>
+    </Loggers>
+    
+</Configuration>

@@ -4,20 +4,15 @@ import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.lambda.runtime.events.SQSEvent;
 import io.opentelemetry.api.OpenTelemetry;
-import io.opentelemetry.api.common.AttributeKey;
-import io.opentelemetry.api.common.Attributes;
-import io.opentelemetry.api.metrics.DoubleHistogram;
-import io.opentelemetry.api.metrics.Meter;
-import io.opentelemetry.api.metrics.LongCounter;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanKind;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Scope;
 import io.opentelemetry.semconv.ServiceAttributes;
+import pe.soapros.otel.metrics.infrastructure.MetricsFactory;
+import pe.soapros.otel.metrics.infrastructure.LambdaMetricsCollector;
 
-import java.time.Duration;
-import java.time.Instant;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -26,21 +21,11 @@ import java.util.stream.Collectors;
 public abstract class SqsTracingLambdaWrapper implements RequestHandler<SQSEvent, Void> {
     
     private final OpenTelemetry openTelemetry;
+    private final LambdaMetricsCollector lambdaMetricsCollector;
 
     private final Tracer tracer;
-    private final Meter meter;
-
-    private volatile LongCounter messageCounter;
-    private volatile LongCounter errorCounter;
-    private volatile DoubleHistogram processingDurationHistogram;
-    private volatile LongCounter coldStartCounter;
-
-    private final boolean enableDetailedMetrics;
-    private final boolean enableColdStartDetection;
     private final String serviceName;
     private final String serviceVersion;
-
-    private static volatile boolean isColdStart = true;
 
     public SqsTracingLambdaWrapper(OpenTelemetry openTelemetry) {
         Objects.requireNonNull(openTelemetry, "OpenTelemetry instance cannot be null");
@@ -52,66 +37,42 @@ public abstract class SqsTracingLambdaWrapper implements RequestHandler<SQSEvent
         this.serviceVersion = Optional.ofNullable(System.getenv("OTEL_SERVICE_VERSION"))
                 .orElse(System.getenv("AWS_LAMBDA_FUNCTION_VERSION"));
 
-        this.enableDetailedMetrics = Boolean.parseBoolean(
-                System.getenv().getOrDefault("OTEL_LAMBDA_ENABLE_DETAILED_METRICS", "true"));
-        this.enableColdStartDetection = Boolean.parseBoolean(
-                System.getenv().getOrDefault("OTEL_LAMBDA_ENABLE_COLD_START_DETECTION", "true"));
-
-        // Inicializar tracer y meter
+        // Inicializar tracer
         this.tracer = openTelemetry.getTracer(
                 "pe.soapros.otel.lambda.sqs",
                 Optional.ofNullable(serviceVersion).orElse("1.0.0")
         );
-        this.meter = openTelemetry.getMeter("pe.soapros.otel.lambda.sqs.metrics");
-    }
-
-    private void initializeMetricsIfNeeded() {
-        if (messageCounter == null && enableDetailedMetrics) {
-            synchronized (this) {
-                if (messageCounter == null) {
-                    messageCounter = meter.counterBuilder("sqs_messages_processed_total")
-                            .setDescription("Total number of SQS messages processed")
-                            .build();
-
-                    errorCounter = meter.counterBuilder("sqs_messages_errors_total")
-                            .setDescription("Total number of SQS message processing errors")
-                            .build();
-
-                    processingDurationHistogram = meter.histogramBuilder("sqs_message_processing_duration_seconds")
-                            .setDescription("Time spent processing SQS messages")
-                            .setUnit("s")
-                            .build();
-
-                    coldStartCounter = meter.counterBuilder("sqs_lambda_cold_starts_total")
-                            .setDescription("Total number of Lambda cold starts for SQS processing")
-                            .build();
-                }
-            }
-        }
+        
+        // Inicializar metrics factory y lambda metrics collector
+        MetricsFactory metricsFactory = MetricsFactory.create(
+                openTelemetry, 
+                serviceName != null ? serviceName : "sqs-lambda-wrapper", 
+                serviceVersion != null ? serviceVersion : "1.0.0"
+        );
+        this.lambdaMetricsCollector = metricsFactory.getLambdaMetricsCollector();
     }
 
     @Override
     public Void handleRequest(SQSEvent event, Context lambdaContext) {
-        initializeMetricsIfNeeded();
+        // Iniciar métricas de Lambda con el colector especializado
+        lambdaMetricsCollector.startExecution(lambdaContext);
 
-        // Detectar cold start
-        boolean currentColdStart = false;
-        if (enableColdStartDetection && isColdStart) {
-            currentColdStart = true;
-            isColdStart = false;
-            if (coldStartCounter != null) {
-                coldStartCounter.add(1);
-            }
+        try {
+            event.getRecords().forEach(message -> processSqsMessage(message, lambdaContext));
+            
+            // Finalizar métricas de Lambda exitosamente
+            lambdaMetricsCollector.endExecution(lambdaContext, true, null);
+            
+            return null;
+            
+        } catch (Exception ex) {
+            // Finalizar métricas de Lambda con error
+            lambdaMetricsCollector.endExecution(lambdaContext, false, ex);
+            throw ex;
         }
-
-        final boolean coldStart = currentColdStart;
-
-        event.getRecords().forEach(message -> processSqsMessage(message, lambdaContext, coldStart));
-
-        return null;
     }
 
-    private void processSqsMessage(SQSEvent.SQSMessage message, Context lambdaContext, boolean coldStart) {
+    private void processSqsMessage(SQSEvent.SQSMessage message, Context lambdaContext) {
         Map<String, String> headers = message.getMessageAttributes().entrySet().stream()
                 .filter(entry -> entry.getValue().getStringValue() != null)
                 .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().getStringValue()));
@@ -124,18 +85,16 @@ public abstract class SqsTracingLambdaWrapper implements RequestHandler<SQSEvent
                 .setSpanKind(SpanKind.CONSUMER)
                 .startSpan();
 
-        Instant startTime = Instant.now();
-
         try (Scope scope = span.makeCurrent()) {
-            enrichSpanWithSqsAttributes(span, message, lambdaContext, coldStart);
+            enrichSpanWithSqsAttributes(span, message, lambdaContext);
 
             handle(message, lambdaContext);
 
             span.setStatus(StatusCode.OK);
-            recordSuccessMetrics(queueName, startTime);
+            // Métricas manejadas por LambdaMetricsCollector
 
         } catch (Exception ex) {
-            recordErrorMetrics(queueName, startTime);
+            // Métricas de error manejadas por LambdaMetricsCollector
             SpanManager.closeSpan(span, ex);
             throw ex;
         } finally {
@@ -151,7 +110,7 @@ public abstract class SqsTracingLambdaWrapper implements RequestHandler<SQSEvent
         return parts.length > 5 ? parts[5] : "unknown";
     }
 
-    private void enrichSpanWithSqsAttributes(Span span, SQSEvent.SQSMessage message, Context lambdaContext, boolean coldStart) {
+    private void enrichSpanWithSqsAttributes(Span span, SQSEvent.SQSMessage message, Context lambdaContext) {
         // Atributos estándar de messaging
         span.setAttribute("messaging.system", "aws.sqs");
         span.setAttribute("messaging.destination", message.getEventSourceArn());
@@ -187,7 +146,7 @@ public abstract class SqsTracingLambdaWrapper implements RequestHandler<SQSEvent
         // Atributos de FaaS y Lambda
         span.setAttribute("faas.trigger", "pubsub");
         span.setAttribute("faas.execution", lambdaContext.getAwsRequestId());
-        span.setAttribute("faas.coldstart", coldStart);
+        // Cold start se maneja automáticamente por LambdaMetricsCollector
 
         // Atributos de servicio
         if (serviceName != null) {
@@ -205,38 +164,6 @@ public abstract class SqsTracingLambdaWrapper implements RequestHandler<SQSEvent
         // Atributos de mensaje
         if (message.getMessageAttributes() != null && !message.getMessageAttributes().isEmpty()) {
             span.setAttribute("messaging.aws.sqs.message_attributes.count", message.getMessageAttributes().size());
-        }
-    }
-
-    private void recordSuccessMetrics(String queueName, Instant startTime) {
-        if (enableDetailedMetrics && messageCounter != null) {
-            messageCounter.add(1, Attributes.of(
-                    AttributeKey.stringKey("queue"), queueName,
-                    AttributeKey.stringKey("status"), "success"
-            ));
-
-            Duration duration = Duration.between(startTime, Instant.now());
-            processingDurationHistogram.record(duration.toNanos() / 1_000_000_000.0,
-                    Attributes.of(
-                            AttributeKey.stringKey("queue"), queueName,
-                            AttributeKey.stringKey("status"), "success"
-                    ));
-        }
-    }
-
-    private void recordErrorMetrics(String queueName, Instant startTime) {
-        if (enableDetailedMetrics && errorCounter != null) {
-            errorCounter.add(1, Attributes.of(
-                    AttributeKey.stringKey("queue"), queueName,
-                    AttributeKey.stringKey("status"), "error"
-            ));
-
-            Duration duration = Duration.between(startTime, Instant.now());
-            processingDurationHistogram.record(duration.toNanos() / 1_000_000_000.0,
-                    Attributes.of(
-                            AttributeKey.stringKey("queue"), queueName,
-                            AttributeKey.stringKey("status"), "error"
-                    ));
         }
     }
 

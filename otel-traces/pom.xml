@@ -11,13 +11,12 @@
   <artifactId>otel-traces</artifactId>
   <version>1.0-SNAPSHOT</version>
 
-
   <dependencies>
     <!-- Dependencia al core (interfaces) -->
     <dependency>
       <groupId>pe.soapros.otel</groupId>
       <artifactId>otel-core</artifactId>
-      <version>1.0-SNAPSHOT</version>
+      <version>${project.version}</version>
     </dependency>
 
     <!-- OpenTelemetry Tracing -->
@@ -35,10 +34,6 @@
     </dependency>
     <dependency>
       <groupId>io.opentelemetry</groupId>
-      <artifactId>opentelemetry-api</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>io.opentelemetry</groupId>
       <artifactId>opentelemetry-sdk</artifactId>
     </dependency>
     <dependency>
@@ -46,10 +41,15 @@
       <artifactId>opentelemetry-semconv</artifactId>
 
     </dependency>
+    <!-- Test dependencies -->
     <dependency>
-      <groupId>junit</groupId>
-      <artifactId>junit</artifactId>
-      <version>3.8.1</version>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-core</artifactId>
       <scope>test</scope>
     </dependency>
   </dependencies>

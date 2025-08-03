@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?><project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
   <modelVersion>4.0.0</modelVersion>
+
   <groupId>pe.soapros.otel</groupId>
   <artifactId>otel-observability</artifactId>
   <packaging>pom</packaging>
@@ -39,6 +40,11 @@
         <artifactId>aws-lambda-java-events</artifactId>
         <version>3.16.1</version>
       </dependency>
+      <dependency>
+        <groupId>com.amazonaws</groupId>
+        <artifactId>aws-lambda-java-core</artifactId>
+        <version>1.2.3</version>
+      </dependency>
 
       <dependency>
         <groupId>org.slf4j</groupId>
@@ -59,6 +65,11 @@
       <dependency>
         <groupId>io.opentelemetry</groupId>
         <artifactId>opentelemetry-sdk-metrics</artifactId>
+        <version>${otel.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.opentelemetry</groupId>
+        <artifactId>opentelemetry-sdk-logs</artifactId>
         <version>${otel.version}</version>
       </dependency>
       <dependency>

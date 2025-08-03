@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    
+    <!-- Appender para consola con correlación de trace -->
+    <appender name="CONSOLE_WITH_TRACE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <!-- Pattern que incluye traceId y spanId del MDC -->
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{traceId:-},%X{spanId:-}] %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+    
+    <!-- Appender JSON para ambientes productivos -->
+    <appender name="JSON_WITH_TRACE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
+            <providers>
+                <timestamp/>
+                <logLevel/>
+                <loggerName/>
+                <message/>
+                <mdc/>
+                <arguments/>
+                <stackTrace/>
+                <!-- Campos específicos para OpenTelemetry -->
+                <pattern>
+                    <pattern>
+                        {
+                        "trace_id": "%X{traceId:-}",
+                        "span_id": "%X{spanId:-}",
+                        "trace_sampled": "%X{traceSampled:-false}",
+                        "service_name": "${SERVICE_NAME:-otel-logs-service}",
+                        "environment": "${ENVIRONMENT:-development}"
+                        }
+                    </pattern>
+                </pattern>
+            </providers>
+        </encoder>
+    </appender>
+    
+    <!-- OpenTelemetry appender para envío directo -->
+    <appender name="OTEL" class="pe.soapros.otel.logs.infrastructure.logback.OpenTelemetryLogbackAppender">
+        <instrumentationName>logback-otel-correlation</instrumentationName>
+    </appender>
+    
+    <!-- Configuración para diferentes environments -->
+    <springProfile name="development">
+        <root level="DEBUG">
+            <appender-ref ref="CONSOLE_WITH_TRACE"/>
+            <appender-ref ref="OTEL"/>
+        </root>
+    </springProfile>
+    
+    <springProfile name="production">
+        <root level="INFO">
+            <appender-ref ref="JSON_WITH_TRACE"/>
+            <appender-ref ref="OTEL"/>
+        </root>
+    </springProfile>
+    
+    <!-- Configuración por defecto -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE_WITH_TRACE"/>
+        <appender-ref ref="OTEL"/>
+    </root>
+    
+    <!-- Loggers específicos -->
+    <logger name="pe.soapros.otel" level="DEBUG"/>
+    <logger name="io.opentelemetry" level="INFO"/>
+    <logger name="org.springframework" level="WARN"/>
+    
+</configuration>
