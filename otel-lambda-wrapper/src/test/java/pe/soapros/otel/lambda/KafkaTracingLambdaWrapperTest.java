@@ -66,8 +66,8 @@ public class KafkaTracingLambdaWrapperTest {
         assertEquals(1, spans.size());
 
         var span = spans.getFirst();
-        assertEquals("kafka:my-topic", span.getName());
+        assertEquals("kafka my-topic process", span.getName());
         assertEquals(SpanKind.CONSUMER, span.getKind());
-        assertEquals(42L, span.getAttributes().get(AttributeKey.longKey("kafka.offset")));
+        assertEquals(42L, span.getAttributes().get(AttributeKey.longKey("messaging.kafka.message.offset")));
     }
 }

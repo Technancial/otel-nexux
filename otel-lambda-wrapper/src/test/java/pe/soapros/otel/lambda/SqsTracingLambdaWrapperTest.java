@@ -60,9 +60,9 @@ class SqsTracingLambdaWrapperTest {
         var spans = spanExporter.getFinishedSpanItems();
         assertEquals(1, spans.size());
         var span = spans.getFirst();
-        assertEquals("sqs:arn:aws:sqs:us-east-1:123456789012:my-queue", span.getName());
+        assertEquals("sqs my-queue process", span.getName());
         assertEquals(SpanKind.CONSUMER, span.getKind());
-        assertEquals(message.getMessageId(), span.getAttributes().get(AttributeKey.stringKey("messaging.message_id")));
+        assertEquals(message.getMessageId(), span.getAttributes().get(AttributeKey.stringKey("messaging.message.id")));
     }
 }
 

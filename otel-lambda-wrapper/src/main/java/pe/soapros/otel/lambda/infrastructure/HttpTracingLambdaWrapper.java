@@ -7,6 +7,7 @@ import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyRequestEvent;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyResponseEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.opentelemetry.api.OpenTelemetry;
+import pe.soapros.otel.traces.infrastructure.config.OpenTelemetryConfiguration;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.metrics.DoubleHistogram;
@@ -47,10 +48,6 @@ public abstract class HttpTracingLambdaWrapper implements RequestHandler<APIGate
 
     private static volatile boolean isColdStart = true;
 
-    // Constructor sin parámetros para facilitar uso
-    public HttpTracingLambdaWrapper() {
-        this(OpenTelemetryConfig.getInstance());
-    }
 
     public HttpTracingLambdaWrapper(OpenTelemetry openTelemetry) {
         Objects.requireNonNull(openTelemetry, "OpenTelemetry instance cannot be null");
@@ -88,13 +85,35 @@ public abstract class HttpTracingLambdaWrapper implements RequestHandler<APIGate
         try {
             String jsonBody = body instanceof String ? (String) body :
                     new ObjectMapper().writeValueAsString(body);
-            return APIGatewayProxyResponseEvent.
-                    .withStatusCode(200)
-                    .withHeaders(createCorsHeaders())
-                    .withBody(jsonBody)
-                    .build();
+            APIGatewayProxyResponseEvent response = new APIGatewayProxyResponseEvent();
+            response.setStatusCode(200);
+            response.setHeaders(createCorsHeaders());
+            response.setBody(jsonBody);
+            return response;
         } catch (Exception e) {
             return createErrorResponse(500, "Failed to serialize response");
+        }
+    }
+
+    protected APIGatewayProxyResponseEvent createErrorResponse(int statusCode, String message) {
+        try {
+            Map<String, Object> errorBody = new HashMap<>();
+            errorBody.put("error", message);
+            errorBody.put("statusCode", statusCode);
+            
+            String jsonBody = new ObjectMapper().writeValueAsString(errorBody);
+            
+            APIGatewayProxyResponseEvent response = new APIGatewayProxyResponseEvent();
+            response.setStatusCode(statusCode);
+            response.setHeaders(createCorsHeaders());
+            response.setBody(jsonBody);
+            return response;
+        } catch (Exception e) {
+            APIGatewayProxyResponseEvent response = new APIGatewayProxyResponseEvent();
+            response.setStatusCode(500);
+            response.setHeaders(createCorsHeaders());
+            response.setBody("{\"error\":\"Internal server error\"}");
+            return response;
         }
     }
 
