@@ -3,7 +3,6 @@ package pe.soapros.otel.lambda.infrastructure;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
-import io.opentelemetry.api.logs.Severity;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
@@ -11,7 +10,6 @@ import io.opentelemetry.context.Context;
 import pe.soapros.otel.core.domain.LoggerService;
 import pe.soapros.otel.logs.domain.LogsManager;
 import pe.soapros.otel.logs.infrastructure.ContextAwareLoggerService;
-import pe.soapros.otel.logs.infrastructure.TraceContextLogEnricher;
 
 import java.util.HashMap;
 import java.util.Map;

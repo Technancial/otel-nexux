@@ -7,7 +7,6 @@ import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyRequestEvent;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyResponseEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.opentelemetry.api.OpenTelemetry;
-import pe.soapros.otel.traces.infrastructure.config.OpenTelemetryConfiguration;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.trace.Span;
@@ -31,7 +30,7 @@ import java.util.Optional;
 public abstract class HttpTracingLambdaWrapper implements RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyResponseEvent> {
 
     protected final OpenTelemetry openTelemetry;
-    private final ObservabilityManager observabilityManager;
+    private final BusinessAwareObservabilityManager observabilityManager;
     private final LambdaMetricsCollector lambdaMetricsCollector;
 
     private final Tracer tracer;
@@ -54,7 +53,7 @@ public abstract class HttpTracingLambdaWrapper implements RequestHandler<APIGate
                 "pe.soapros.otel.lambda.http",
                 Optional.ofNullable(serviceVersion).orElse("1.0.0")
         );
-        this.observabilityManager = new ObservabilityManager(openTelemetry, "http-lambda-wrapper");
+        this.observabilityManager = new BusinessAwareObservabilityManager(openTelemetry, "http-lambda-wrapper");
         
         // Inicializar metrics factory y lambda metrics collector
         MetricsFactory metricsFactory = MetricsFactory.create(
@@ -80,7 +79,7 @@ public abstract class HttpTracingLambdaWrapper implements RequestHandler<APIGate
                     new ObjectMapper().writeValueAsString(body);
             APIGatewayProxyResponseEvent response = new APIGatewayProxyResponseEvent();
             response.setStatusCode(200);
-            response.setHeaders(createCorsHeaders());
+            //response.setHeaders(createCorsHeaders());
             response.setBody(jsonBody);
             return response;
         } catch (Exception e) {
@@ -98,13 +97,13 @@ public abstract class HttpTracingLambdaWrapper implements RequestHandler<APIGate
             
             APIGatewayProxyResponseEvent response = new APIGatewayProxyResponseEvent();
             response.setStatusCode(statusCode);
-            response.setHeaders(createCorsHeaders());
+            //response.setHeaders(createCorsHeaders());
             response.setBody(jsonBody);
             return response;
         } catch (Exception e) {
             APIGatewayProxyResponseEvent response = new APIGatewayProxyResponseEvent();
             response.setStatusCode(500);
-            response.setHeaders(createCorsHeaders());
+            //response.setHeaders(createCorsHeaders());
             response.setBody("{\"error\":\"Internal server error\"}");
             return response;
         }
@@ -114,6 +113,10 @@ public abstract class HttpTracingLambdaWrapper implements RequestHandler<APIGate
     public APIGatewayProxyResponseEvent handleRequest(APIGatewayProxyRequestEvent event, Context context) {
         // Iniciar métricas de Lambda con el colector especializado
         lambdaMetricsCollector.startExecution(context);
+
+        observabilityManager.setupBusinessContextFromHeaders(
+                Optional.ofNullable(event.getHeaders()).orElse(Map.of())
+        );
 
         // Extraer información de request
         final String path = extractPath(event);
@@ -197,6 +200,14 @@ public abstract class HttpTracingLambdaWrapper implements RequestHandler<APIGate
     
     protected void logWarn(String message, Map<String, String> attributes) {
         observabilityManager.getLoggerService().warn(message, attributes);
+    }
+
+    protected Map<String, String> getCurrentContextInfo() {
+        return observabilityManager.getCompleteContextInfo();
+    }
+
+    protected Optional<String> getCurrentBusinessId() {
+        return observabilityManager.getCurrentBusinessId();
     }
 
     private void enrichSpanWithRequestAttributes(Span span, APIGatewayProxyRequestEvent event,
