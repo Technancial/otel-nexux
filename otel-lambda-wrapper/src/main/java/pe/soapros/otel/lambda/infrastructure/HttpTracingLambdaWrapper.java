@@ -20,6 +20,7 @@ import io.opentelemetry.semconv.UserAgentAttributes;
 import pe.soapros.otel.metrics.infrastructure.MetricsFactory;
 import pe.soapros.otel.metrics.infrastructure.LambdaMetricsCollector;
 
+import javax.lang.model.SourceVersion;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
@@ -29,16 +30,23 @@ import java.util.Optional;
 
 public abstract class HttpTracingLambdaWrapper implements RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyResponseEvent> {
 
-    protected final OpenTelemetry openTelemetry;
-    private final BusinessAwareObservabilityManager observabilityManager;
-    private final LambdaMetricsCollector lambdaMetricsCollector;
+    protected OpenTelemetry openTelemetry = null;
+    private BusinessAwareObservabilityManager observabilityManager = null;
+    private LambdaMetricsCollector lambdaMetricsCollector = null;
 
-    private final Tracer tracer;
-    private final String serviceName;
-    private final String serviceVersion;
+    private Tracer tracer = null;
+    private String serviceName = "";
+    private String serviceVersion = "";
 
+    public HttpTracingLambdaWrapper() {
+
+    }
 
     public HttpTracingLambdaWrapper(OpenTelemetry openTelemetry) {
+        setOpenTelemetry(openTelemetry);
+    }
+
+    public void setOpenTelemetry(OpenTelemetry openTelemetry) {
         Objects.requireNonNull(openTelemetry, "OpenTelemetry instance cannot be null");
         this.openTelemetry = openTelemetry;
 
@@ -54,11 +62,11 @@ public abstract class HttpTracingLambdaWrapper implements RequestHandler<APIGate
                 Optional.ofNullable(serviceVersion).orElse("1.0.0")
         );
         this.observabilityManager = new BusinessAwareObservabilityManager(openTelemetry, "http-lambda-wrapper");
-        
+
         // Inicializar metrics factory y lambda metrics collector
         MetricsFactory metricsFactory = MetricsFactory.create(
-                openTelemetry, 
-                serviceName != null ? serviceName : "http-lambda-wrapper", 
+                openTelemetry,
+                serviceName != null ? serviceName : "http-lambda-wrapper",
                 serviceVersion != null ? serviceVersion : "1.0.0"
         );
         this.lambdaMetricsCollector = metricsFactory.getLambdaMetricsCollector();
@@ -111,6 +119,7 @@ public abstract class HttpTracingLambdaWrapper implements RequestHandler<APIGate
 
     @Override
     public APIGatewayProxyResponseEvent handleRequest(APIGatewayProxyRequestEvent event, Context context) {
+        System.out.println("event.toString() = " + event.toString());
         // Iniciar métricas de Lambda con el colector especializado
         lambdaMetricsCollector.startExecution(context);
 
