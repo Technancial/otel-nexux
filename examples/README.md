@@ -7,11 +7,14 @@ Este directorio contiene ejemplos prácticos de cómo usar la librería de obser
 ```
 examples/
 ├── src/main/java/pe/soapros/otel/lambda/examples/
-│   ├── HttpLambdaExample.java         # Ejemplo básico de Lambda HTTP con API Gateway
-│   ├── AdvancedHttpLambdaExample.java # Ejemplo avanzado con spans anidados
-│   ├── SqsLambdaExample.java          # Ejemplo de Lambda con SQS
-│   └── KafkaLambdaExample.java        # Ejemplo de Lambda con Kafka
-└── README.md                          # Este archivo
+│   ├── HttpLambdaExample.java                # Ejemplo básico de Lambda HTTP con API Gateway
+│   ├── ComprehensiveHttpLambdaExample.java   # Ejemplo completo con múltiples endpoints
+│   ├── ProductApiLambdaExample.java          # Ejemplo práctico de API de productos
+│   ├── AdvancedHttpLambdaExample.java        # Ejemplo avanzado con spans anidados
+│   ├── SqsLambdaExample.java                 # Ejemplo de Lambda con SQS
+│   ├── KafkaLambdaExample.java               # Ejemplo de Lambda con Kafka
+│   └── TraceLogCorrelationExample.java       # Ejemplo de correlación trazas-logs
+└── README.md                                 # Este archivo
 ```
 
 ## 🚀 Ejemplos disponibles
@@ -27,7 +30,59 @@ Ejemplo básico que demuestra el uso fundamental del `HttpTracingLambdaWrapper`.
 - Uso del span principal automático
 - Respuestas HTTP simples
 
-### 2. AdvancedHttpLambdaExample
+### 2. ComprehensiveHttpLambdaExample
+**Archivo:** `ComprehensiveHttpLambdaExample.java`
+
+Ejemplo completo que demuestra el uso avanzado del `HttpTracingLambdaWrapper` con múltiples endpoints y funcionalidades.
+
+**Características mostradas:**
+- Manejo de múltiples métodos HTTP (GET, POST, PUT, DELETE, OPTIONS)
+- Enrutamiento de requests basado en path y método
+- Configuración automática de contexto de negocio desde headers
+- Logging estructurado con correlación
+- Manejo robusto de errores
+- Respuestas JSON bien estructuradas
+- Headers CORS automáticos
+
+**Endpoints implementados:**
+- `GET /users/{id}` - Obtener información de usuario
+- `GET /health` - Health check del servicio
+- `GET /metrics` - Obtener métricas del servicio
+- `POST /resources` - Crear nuevos recursos
+- `PUT /users/{id}` - Actualizar usuarios
+- `DELETE /users/{id}` - Eliminar usuarios
+- `OPTIONS /*` - Soporte CORS
+
+### 3. ProductApiLambdaExample
+**Archivo:** `ProductApiLambdaExample.java`
+
+Ejemplo práctico de una API REST completa para gestión de productos en un contexto de e-commerce.
+
+**Características mostradas:**
+- CRUD completo de productos con validaciones
+- Contexto de negocio específico por tenant/dominio
+- Búsqueda y filtrado de productos
+- Validaciones de negocio robustas
+- Excepciones específicas del dominio
+- Métricas de negocio personalizadas
+- Manejo de inventario y disponibilidad
+
+**Endpoints implementados:**
+- `GET /products` - Listar productos con filtros opcionales
+- `GET /products/{id}` - Obtener producto específico  
+- `GET /products/search?q={term}` - Buscar productos
+- `POST /products` - Crear nuevo producto
+- `PUT /products/{id}` - Actualizar producto
+- `DELETE /products/{id}` - Eliminar producto
+- `GET /tenant/{tenantId}/products` - Productos por tenant
+
+**Validaciones incluidas:**
+- Validación de precios (no negativos)
+- Validación de stock (no negativos)  
+- Validación de campos requeridos
+- Validación de formatos de datos
+
+### 4. AdvancedHttpLambdaExample
 **Archivo:** `AdvancedHttpLambdaExample.java`
 
 Ejemplo avanzado que demuestra cómo enriquecer las trazas con spans anidados y eventos personalizados.
@@ -182,10 +237,21 @@ curl -X POST http://localhost:3000/calculate \
   -H "X-User-ID: user123" \
   -d '{"value": 42}'
 
-# Test con diferentes operaciones
-curl http://localhost:3000/validate -d '{"data": "test"}'
-curl http://localhost:3000/transform -d '{"text": "hello world"}'
-curl http://localhost:3000/error  # Para probar manejo de errores
+# Test ComprehensiveHttpLambdaExample  
+curl http://localhost:3000/health
+curl http://localhost:3000/metrics  
+curl http://localhost:3000/users/123 -H "X-User-ID: user456" -H "X-Correlation-ID: test-123"
+curl -X POST http://localhost:3000/resources -H "Content-Type: application/json" -d '{"name": "Test Resource", "type": "example"}'
+
+# Test ProductApiLambdaExample
+curl http://localhost:3000/products  # Listar todos los productos
+curl "http://localhost:3000/products?category=Electronics&available=true"  # Con filtros
+curl http://localhost:3000/products/1  # Producto específico
+curl "http://localhost:3000/products/search?q=laptop"  # Buscar productos
+curl -X POST http://localhost:3000/products \
+  -H "Content-Type: application/json" \
+  -H "X-Business-ID: tenant-123" \
+  -d '{"name": "Nuevo Producto", "price": 99.99, "category": "Electronics", "stock": 10}'
 
 # Test función SQS
 sam local invoke SqsFunction --event events/sqs-event.json

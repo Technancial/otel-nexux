@@ -13,7 +13,7 @@ import java.util.Map;
 public class EnhancedHttpLambdaExample extends HttpTracingLambdaWrapper {
 
     public EnhancedHttpLambdaExample() {
-        super(OpenTelemetryConfiguration.create());
+        super(OpenTelemetryConfiguration.init("EnhancedHttpLambda"));
     }
 
     public EnhancedHttpLambdaExample(OpenTelemetry openTelemetry) {

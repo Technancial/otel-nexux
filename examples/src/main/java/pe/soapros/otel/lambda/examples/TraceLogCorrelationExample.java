@@ -25,7 +25,7 @@ public class TraceLogCorrelationExample extends HttpTracingLambdaWrapper {
     private static final Logger traditionalLogger = LoggerFactory.getLogger(TraceLogCorrelationExample.class);
     
     public TraceLogCorrelationExample() {
-        super(OpenTelemetryConfiguration.create());
+        super(OpenTelemetryConfiguration.init("TraceLogCorrelation"));
     }
 
     public TraceLogCorrelationExample(OpenTelemetry openTelemetry) {
@@ -33,7 +33,7 @@ public class TraceLogCorrelationExample extends HttpTracingLambdaWrapper {
     }
 
     @Override
-    public APIGatewayProxyRequestEvent handle(APIGatewayProxyRequestEvent event, Context context) {
+    public APIGatewayProxyResponseEvent handle(APIGatewayProxyRequestEvent event, Context context) {
         
         // ===== 1. DEMOSTRACIÓN CON LOGGER CONTEXT-AWARE =====
         

@@ -16,7 +16,7 @@ public class HttpLambdaExample extends HttpTracingLambdaWrapper {
     }
 
     @Override
-    protected APIGatewayProxyResponseEvent handleHttpRequest(
+    public APIGatewayProxyResponseEvent handle(
             APIGatewayProxyRequestEvent event, Context context) {
         
         // El wrapper ya ha creado el span y configurado las métricas

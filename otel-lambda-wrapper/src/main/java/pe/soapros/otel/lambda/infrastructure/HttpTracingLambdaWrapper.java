@@ -87,7 +87,7 @@ public abstract class HttpTracingLambdaWrapper implements RequestHandler<APIGate
                     new ObjectMapper().writeValueAsString(body);
             APIGatewayProxyResponseEvent response = new APIGatewayProxyResponseEvent();
             response.setStatusCode(200);
-            //response.setHeaders(createCorsHeaders());
+            response.setHeaders(createCorsHeaders());
             response.setBody(jsonBody);
             return response;
         } catch (Exception e) {
@@ -105,13 +105,13 @@ public abstract class HttpTracingLambdaWrapper implements RequestHandler<APIGate
             
             APIGatewayProxyResponseEvent response = new APIGatewayProxyResponseEvent();
             response.setStatusCode(statusCode);
-            //response.setHeaders(createCorsHeaders());
+            response.setHeaders(createCorsHeaders());
             response.setBody(jsonBody);
             return response;
         } catch (Exception e) {
             APIGatewayProxyResponseEvent response = new APIGatewayProxyResponseEvent();
             response.setStatusCode(500);
-            //response.setHeaders(createCorsHeaders());
+            response.setHeaders(createCorsHeaders());
             response.setBody("{\"error\":\"Internal server error\"}");
             return response;
         }
@@ -333,13 +333,6 @@ public abstract class HttpTracingLambdaWrapper implements RequestHandler<APIGate
                 .replaceAll("/[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}", "/{uuid}");
     }
 
-    private String getStatusClass(int statusCode) {
-        if (statusCode >= 200 && statusCode < 300) return "2xx";
-        if (statusCode >= 300 && statusCode < 400) return "3xx";
-        if (statusCode >= 400 && statusCode < 500) return "4xx";
-        if (statusCode >= 500) return "5xx";
-        return "1xx";
-    }
 
     private void forceFlushTelemetry() {
         try {

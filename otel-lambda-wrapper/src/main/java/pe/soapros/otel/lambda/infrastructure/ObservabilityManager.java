@@ -7,22 +7,24 @@ import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
+import lombok.Getter;
 import pe.soapros.otel.core.domain.LoggerService;
 import pe.soapros.otel.logs.domain.LogsManager;
+import pe.soapros.otel.logs.infrastructure.BusinessContext;
+import pe.soapros.otel.logs.infrastructure.BusinessContextLogEnricher;
 import pe.soapros.otel.logs.infrastructure.ContextAwareLoggerService;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
+
+import static pe.soapros.otel.lambda.infrastructure.ObservabilityConstants.*;
 
 public class ObservabilityManager {
     
+    @Getter
     private final LoggerService loggerService;
     private final OpenTelemetry openTelemetry;
-    
-    public static final AttributeKey<String> ERROR_TYPE = AttributeKey.stringKey("error.type");
-    public static final AttributeKey<String> ERROR_MESSAGE = AttributeKey.stringKey("error.message");
-    public static final AttributeKey<String> EXCEPTION_STACKTRACE = AttributeKey.stringKey("exception.stacktrace");
-    public static final AttributeKey<Boolean> EXCEPTION_ESCAPED = AttributeKey.booleanKey("exception.escaped");
     
     public ObservabilityManager(OpenTelemetry openTelemetry, String instrumentationName) {
         this.openTelemetry = openTelemetry;
@@ -33,7 +35,98 @@ public class ObservabilityManager {
             instrumentationName
         );
     }
-    
+
+    public void setupQuickBusinessContext(String businessId, String userId, String operation) {
+        // Enriquecer MDC con contexto básico
+        BusinessContext context = BusinessContext.builder()
+                .businessId(businessId)
+                .userId(userId)
+                .operation(operation)
+                .build();
+
+        BusinessContextLogEnricher.enrichMDCWithBusiness(context);
+
+        // También enriquecer el span actual si existe
+        Span currentSpan = Span.current();
+        if (currentSpan.getSpanContext().isValid()) {
+            enrichSpanWithQuickContext(currentSpan, businessId, userId, operation);
+        }
+
+        logInfo("Business context configured", Map.of(
+                "business.id", businessId != null ? businessId : "null",
+                "user.id", userId != null ? userId : "null",
+                "operation", operation != null ? operation : "null"
+        ));
+    }
+
+    public void setupBusinessContextFromHeaders(Map<String, String> headers) {
+        if (headers == null || headers.isEmpty()) {
+            return;
+        }
+
+        // Extraer información de negocio de headers comunes
+        String businessId = extractBusinessId(headers);
+        String userId = extractUserId(headers);
+        String correlationId = extractCorrelationId(headers);
+        String tenantId = extractTenantId(headers);
+        String operation = extractOperation(headers);
+
+        BusinessContext context = BusinessContext.builder()
+                .businessId(businessId)
+                .userId(userId)
+                .correlationId(correlationId)
+                .tenantId(tenantId)
+                .operation(operation)
+                .build();
+
+        BusinessContextLogEnricher.enrichMDCWithBusiness(context);
+
+        // También enriquecer el span actual si existe
+        Span currentSpan = Span.current();
+        if (currentSpan.getSpanContext().isValid()) {
+            enrichSpanWithBusinessContext(currentSpan, context);
+        }
+
+        logDebug("Business context configured from headers", Map.of(
+                "headers.count", String.valueOf(headers.size()),
+                "business.id", businessId != null ? businessId : "null",
+                "user.id", userId != null ? userId : "null",
+                "correlation.id", correlationId != null ? correlationId : "null"
+        ));
+    }
+
+    public void updateBusinessId(String businessId) {
+        BusinessContextLogEnricher.updateBusinessId(businessId);
+
+        // Actualizar span actual
+        Span currentSpan = Span.current();
+        if (currentSpan.getSpanContext().isValid()) {
+            currentSpan.setAttribute(BUSINESS_ID, businessId);
+        }
+
+        logDebug("Business ID updated", Map.of("business.id", businessId));
+    }
+
+    public void updateOperation(String operation) {
+        BusinessContextLogEnricher.updateOperation(operation);
+
+        // Actualizar span actual
+        Span currentSpan = Span.current();
+        if (currentSpan.getSpanContext().isValid()) {
+            currentSpan.setAttribute(OPERATION, operation);
+        }
+
+        logDebug("Operation updated", Map.of("operation", operation));
+    }
+
+    public Optional<String> getCurrentBusinessId() {
+        return BusinessContextLogEnricher.getCurrentBusinessId();
+    }
+
+    public Map<String, String> getCompleteContextInfo() {
+        return BusinessContextLogEnricher.getCompleteContextInfo();
+    }
+
     public Span startSpanWithContext(String spanName, Context parentContext, Tracer tracer) {
         Map<String, String> logAttributes = new HashMap<>();
         logAttributes.put("span.name", spanName);
@@ -122,12 +215,12 @@ public class ObservabilityManager {
         
         try {
             span.setAllAttributes(Attributes.of(
-                    AttributeKey.longKey("operation.duration_ms"), durationMs,
-                    AttributeKey.stringKey("operation.name"), operation
+                    OPERATION_DURATION_MS, durationMs,
+                    OPERATION_NAME, operation
             ));
             
             span.addEvent("operation.completed", Attributes.of(
-                    AttributeKey.longKey("duration_ms"), durationMs
+                    OPERATION_DURATION_MS, durationMs
             ));
             
             // Log performance info based on duration
@@ -153,8 +246,8 @@ public class ObservabilityManager {
         
         try {
             span.setAllAttributes(Attributes.of(
-                    AttributeKey.longKey("request.size_bytes"), requestSize,
-                    AttributeKey.longKey("response.size_bytes"), responseSize
+                    REQUEST_SIZE_BYTES, requestSize,
+                    RESPONSE_SIZE_BYTES, responseSize
             ));
             
             // Log size warnings for large payloads
@@ -246,6 +339,8 @@ public class ObservabilityManager {
         logAttributes.put("operation", "lambda.end");
         
         loggerService.info("Lambda function completed", logAttributes);
+
+        BusinessContextLogEnricher.clearMDC();
     }
     
     public void logColdStart(String functionName) {
@@ -256,8 +351,114 @@ public class ObservabilityManager {
         
         loggerService.info("Cold start detected", logAttributes);
     }
-    
+
     public LoggerService getLoggerService() {
         return loggerService;
     }
+
+    // ==================== MÉTODOS AUXILIARES PARA LOGGING ====================
+
+    /**
+     * Log de info con contexto automático
+     */
+    protected void logInfo(String message, Map<String, String> attributes) {
+        loggerService.info(message, attributes);
+    }
+
+    /**
+     * Log de debug con contexto automático
+     */
+    protected void logDebug(String message, Map<String, String> attributes) {
+        loggerService.debug(message, attributes);
+    }
+
+    /**
+     * Log de warning con contexto automático
+     */
+    protected void logWarn(String message, Map<String, String> attributes) {
+        loggerService.warn(message, attributes);
+    }
+
+    /**
+     * Log de error con contexto automático
+     */
+    protected void logError(String message, Map<String, String> attributes) {
+        loggerService.error(message, attributes);
+    }
+
+    // ==================== MÉTODOS PRIVADOS PARA EXTRACCIÓN DE CONTEXTO ====================
+
+    private void enrichSpanWithQuickContext(Span span, String businessId, String userId, String operation) {
+        try {
+            if (businessId != null) {
+                span.setAttribute(BUSINESS_ID, businessId);
+            }
+            if (userId != null) {
+                span.setAttribute(USER_ID, userId);
+            }
+            if (operation != null) {
+                span.setAttribute(OPERATION, operation);
+            }
+        } catch (Exception e) {
+            logError("Error enriching span with quick context: " + e.getMessage(), Map.of());
+        }
+    }
+
+    private void enrichSpanWithBusinessContext(Span span, BusinessContext context) {
+        if (span == null || context == null) return;
+
+        try {
+            if (context.businessId() != null) {
+                span.setAttribute(BUSINESS_ID, context.businessId());
+            }
+            if (context.userId() != null) {
+                span.setAttribute(USER_ID, context.userId());
+            }
+            if (context.operation() != null) {
+                span.setAttribute(OPERATION, context.operation());
+            }
+            if (context.tenantId() != null) {
+                span.setAttribute(TENANT_ID, context.tenantId());
+            }
+            if (context.correlationId() != null) {
+                span.setAttribute(CORRELATION_ID, context.correlationId());
+            }
+        } catch (Exception e) {
+            logError("Error enriching span with business context: " + e.getMessage(), Map.of());
+        }
+    }
+
+    private String extractBusinessId(Map<String, String> headers) {
+        return getHeaderValue(headers, "X-Business-ID", "x-business-id", "Business-ID", "business-id");
+    }
+
+    private String extractUserId(Map<String, String> headers) {
+        return getHeaderValue(headers, "X-User-ID", "x-user-id", "User-ID", "user-id");
+    }
+
+    private String extractCorrelationId(Map<String, String> headers) {
+        return getHeaderValue(headers, "X-Correlation-ID", "x-correlation-id", "Correlation-ID",
+                "correlation-id", "X-Request-ID", "x-request-id");
+    }
+
+    private String extractTenantId(Map<String, String> headers) {
+        return getHeaderValue(headers, "X-Tenant-ID", "x-tenant-id", "Tenant-ID", "tenant-id");
+    }
+
+    private String extractOperation(Map<String, String> headers) {
+        return getHeaderValue(headers, "X-Operation", "x-operation", "Operation", "operation");
+    }
+
+    private String getHeaderValue(Map<String, String> headers, String... possibleKeys) {
+        if (headers == null) return null;
+
+        for (String key : possibleKeys) {
+            String value = headers.get(key);
+            if (value != null && !value.trim().isEmpty()) {
+                return value.trim();
+            }
+        }
+        return null;
+    }
+
 }
