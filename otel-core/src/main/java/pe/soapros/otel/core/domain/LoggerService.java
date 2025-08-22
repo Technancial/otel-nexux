@@ -7,4 +7,6 @@ public interface LoggerService {
     void debug(String message, Map<String, String> attributes);
     void warn(String message, Map<String, String> attributes);
     void error(String message, Map<String, String> attributes);
+
+    void error(String message, Throwable throwable, Map<String, String> attributes);
 }

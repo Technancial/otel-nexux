@@ -9,10 +9,10 @@ import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
 import lombok.Getter;
 import pe.soapros.otel.core.domain.LoggerService;
-import pe.soapros.otel.logs.domain.LogsManager;
-import pe.soapros.otel.logs.infrastructure.BusinessContext;
+import pe.soapros.otel.core.infrastructure.OpenTelemetryManager;
+import pe.soapros.otel.core.infrastructure.BusinessContext;
+import pe.soapros.otel.core.infrastructure.BusinessContextEnricher;
 import pe.soapros.otel.logs.infrastructure.BusinessContextLogEnricher;
-import pe.soapros.otel.logs.infrastructure.ContextAwareLoggerService;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -20,19 +20,42 @@ import java.util.Optional;
 
 import static pe.soapros.otel.lambda.infrastructure.ObservabilityConstants.*;
 
+@Getter
 public class ObservabilityManager {
     
-    @Getter
     private final LoggerService loggerService;
     private final OpenTelemetry openTelemetry;
     
     public ObservabilityManager(OpenTelemetry openTelemetry, String instrumentationName) {
         this.openTelemetry = openTelemetry;
-        LogsManager logsManager = new LogsManager(openTelemetry);
-        // Usar el logger context-aware que automáticamente incluye traceId y spanId
-        this.loggerService = new ContextAwareLoggerService(
-            logsManager.getLoggerProvider(), 
+        // Usar el logger service centralizado que ya incluye trace correlation
+        this.loggerService = new pe.soapros.otel.core.infrastructure.OpenTelemetryLoggerService(
+            openTelemetry.getLogsBridge().get(instrumentationName),
+            instrumentationName,
+            true // Enable trace correlation
+        );
+    }
+    
+    public static ObservabilityManager fromManager(String instrumentationName) {
+        if (!OpenTelemetryManager.isInitialized()) {
+            throw new IllegalStateException("OpenTelemetryManager not initialized. Call OpenTelemetryManager.initialize() first.");
+        }
+        
+        return new ObservabilityManager(
+            OpenTelemetryManager.getInstance().getOpenTelemetry(), 
             instrumentationName
+        );
+    }
+    
+    public static ObservabilityManager fromManagerWithDefaults() {
+        if (!OpenTelemetryManager.isInitialized()) {
+            throw new IllegalStateException("OpenTelemetryManager not initialized. Call OpenTelemetryManager.initialize() first.");
+        }
+        
+        var manager = OpenTelemetryManager.getInstance();
+        return new ObservabilityManager(
+            manager.getOpenTelemetry(), 
+            manager.getConfig().getServiceName()
         );
     }
 
@@ -44,7 +67,7 @@ public class ObservabilityManager {
                 .operation(operation)
                 .build();
 
-        BusinessContextLogEnricher.enrichMDCWithBusiness(context);
+        BusinessContextEnricher.enrichMDCWithBusiness(context);
 
         // También enriquecer el span actual si existe
         Span currentSpan = Span.current();
@@ -79,7 +102,7 @@ public class ObservabilityManager {
                 .operation(operation)
                 .build();
 
-        BusinessContextLogEnricher.enrichMDCWithBusiness(context);
+        BusinessContextEnricher.enrichMDCWithBusiness(context);
 
         // También enriquecer el span actual si existe
         Span currentSpan = Span.current();
@@ -96,7 +119,7 @@ public class ObservabilityManager {
     }
 
     public void updateBusinessId(String businessId) {
-        BusinessContextLogEnricher.updateBusinessId(businessId);
+        BusinessContextEnricher.updateBusinessId(businessId);
 
         // Actualizar span actual
         Span currentSpan = Span.current();
@@ -108,7 +131,7 @@ public class ObservabilityManager {
     }
 
     public void updateOperation(String operation) {
-        BusinessContextLogEnricher.updateOperation(operation);
+        BusinessContextEnricher.updateOperation(operation);
 
         // Actualizar span actual
         Span currentSpan = Span.current();
@@ -340,7 +363,7 @@ public class ObservabilityManager {
         
         loggerService.info("Lambda function completed", logAttributes);
 
-        BusinessContextLogEnricher.clearMDC();
+        BusinessContextEnricher.clearMDC();
     }
     
     public void logColdStart(String functionName) {
@@ -350,10 +373,6 @@ public class ObservabilityManager {
         logAttributes.put("operation", "lambda.cold_start");
         
         loggerService.info("Cold start detected", logAttributes);
-    }
-
-    public LoggerService getLoggerService() {
-        return loggerService;
     }
 
     // ==================== MÉTODOS AUXILIARES PARA LOGGING ====================

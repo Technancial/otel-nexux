@@ -2,6 +2,7 @@ package pe.soapros.otel.metrics.infrastructure;
 
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.metrics.Meter;
+import pe.soapros.otel.core.infrastructure.OpenTelemetryManager;
 import pe.soapros.otel.metrics.domain.MetricsService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -276,6 +277,41 @@ public class MetricsFactory {
         }
         
         return new MetricsFactory(openTelemetry, serviceName.trim(), serviceVersion.trim());
+    }
+    
+    /**
+     * Crear instancia usando OpenTelemetryManager centralizado
+     */
+    public static MetricsFactory fromManager() {
+        if (!OpenTelemetryManager.isInitialized()) {
+            throw new IllegalStateException("OpenTelemetryManager not initialized. Call OpenTelemetryManager.initialize() first.");
+        }
+        
+        var manager = OpenTelemetryManager.getInstance();
+        var config = manager.getConfig();
+        
+        return new MetricsFactory(
+            manager.getOpenTelemetry(), 
+            config.getServiceName(), 
+            config.getServiceVersion()
+        );
+    }
+    
+    /**
+     * Crear instancia usando OpenTelemetryManager con nombres personalizados
+     */
+    public static MetricsFactory fromManager(String customServiceName, String customServiceVersion) {
+        if (!OpenTelemetryManager.isInitialized()) {
+            throw new IllegalStateException("OpenTelemetryManager not initialized. Call OpenTelemetryManager.initialize() first.");
+        }
+        
+        var manager = OpenTelemetryManager.getInstance();
+        
+        return new MetricsFactory(
+            manager.getOpenTelemetry(), 
+            customServiceName != null ? customServiceName : manager.getConfig().getServiceName(), 
+            customServiceVersion != null ? customServiceVersion : manager.getConfig().getServiceVersion()
+        );
     }
     
     /**
