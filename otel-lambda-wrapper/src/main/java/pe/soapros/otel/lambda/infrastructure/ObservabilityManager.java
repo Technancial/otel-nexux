@@ -58,7 +58,6 @@ public class ObservabilityManager {
             manager.getConfig().getServiceName()
         );
     }
-
     public void setupQuickBusinessContext(String businessId, String userId, String operation) {
         // Enriquecer MDC con contexto básico
         BusinessContext context = BusinessContext.builder()

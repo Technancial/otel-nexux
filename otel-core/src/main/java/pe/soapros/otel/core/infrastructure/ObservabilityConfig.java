@@ -113,7 +113,7 @@ public class ObservabilityConfig {
                 .setEndpoint(otlpEndpoint)
                 .setTimeout(environment.getExportTimeout())
                 .build();
-        
+
         return SdkLoggerProvider.builder()
                 .setResource(resource)
                 .addLogRecordProcessor(BatchLogRecordProcessor.builder(logExporter)
