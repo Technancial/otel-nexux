@@ -66,8 +66,8 @@ public class OpenTelemetryLoggerService implements LoggerService {
 
             // 🚀 CORRELACIÓN AUTOMÁTICA DE TRACE
             if (enableTraceCorrelation) {
-                //addTraceCorrelation(logRecordBuilder);
-                addTraceCorrelationExplicit(logRecordBuilder, currentContext);
+                addTraceCorrelation(logRecordBuilder);
+                //addTraceCorrelationExplicit(logRecordBuilder, currentContext);
             }
 
 
@@ -98,7 +98,9 @@ public class OpenTelemetryLoggerService implements LoggerService {
             Context currentContext = Context.current();
             Span currentSpan = Span.fromContext(currentContext);
             SpanContext spanContext = currentSpan.getSpanContext();
-            
+            System.out.println("spanContext.getTraceId = " + spanContext.getTraceId() );
+            System.out.println("spanContext.getSpanId() = " + spanContext.getSpanId());
+
             if (spanContext.isValid()) {
                 logRecordBuilder.setAttribute("trace_id", spanContext.getTraceId());
                 logRecordBuilder.setAttribute("span_id", spanContext.getSpanId());
@@ -107,8 +109,11 @@ public class OpenTelemetryLoggerService implements LoggerService {
                 if (spanContext.isSampled()) {
                     logRecordBuilder.setAttribute("trace_sampled", true);
                 }
+            }else{
+                System.out.println("is no valida spanContext");
             }
         } catch (Exception e) {
+            System.out.println("Exception: " +  e.getMessage());
             // Silently ignore - don't let logging correlation break actual logging
         }
     }
