@@ -19,8 +19,8 @@ import static pe.soapros.otel.lambda.infrastructure.ObservabilityConstants.*;
  */
 public class BusinessAwareObservabilityManager extends ObservabilityManager{
 
-    public BusinessAwareObservabilityManager(OpenTelemetry openTelemetry, String instrumentationName) {
-        super(openTelemetry, instrumentationName);
+    public BusinessAwareObservabilityManager(OpenTelemetry openTelemetry, String instrumentationName, LambdaObservabilityConfig config) {
+        super(openTelemetry, instrumentationName, config);
     }
 
     /**

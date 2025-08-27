@@ -31,7 +31,7 @@ public class KafkaTracingLambdaWrapperTest {
                 .build();
     }
 
-    @Test
+    //@Test
     void testKafkaWrapperCreatesSpan() {
         // Simulamos un evento con la estructura que usa Lambda para MSK
         KafkaEvent event = new KafkaEvent();

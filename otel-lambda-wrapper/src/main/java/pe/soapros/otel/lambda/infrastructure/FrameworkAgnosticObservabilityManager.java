@@ -63,7 +63,16 @@ public class FrameworkAgnosticObservabilityManager {
 
         // Reutilizar toda la infraestructura existente
         this.tracer = openTelemetry.getTracer("pe.soapros.otel.lambda.framework-agnostic", this.serviceVersion);
-        this.observabilityManager = new BusinessAwareObservabilityManager(openTelemetry, "framework-agnostic");
+
+        LambdaObservabilityConfig lambdaConfig = LambdaObservabilityConfig.builder()
+                .customResponseHeaders("x-correlation-id", "x-request-id", "x-processing-time")
+                .includeResponseBody(512)
+                .verboseLogging(true) // Para desarrollo
+                .enableSubSpanEvents(true)
+                .enableSubSpanMetrics(true)
+                .build();
+
+        this.observabilityManager = new BusinessAwareObservabilityManager(openTelemetry, "framework-agnostic", lambdaConfig);
         this.objectMapper = new ObjectMapper();
 
         // Inicializar métricas usando la factory existente
@@ -162,7 +171,7 @@ public class FrameworkAgnosticObservabilityManager {
 
         } catch (Exception ex) {
             // Manejar error
-            observabilityManager.closeSpan(span, ex);
+            //observabilityManager.closeSpan(span, ex);
             httpMetricsCollector.endRequest(500, 0, 0, ex);
             lambdaMetricsCollector.endExecution(context, false, ex);
 
@@ -245,7 +254,7 @@ public class FrameworkAgnosticObservabilityManager {
             observabilityManager.closeSpanSuccessfully(span, "SQS message processed");
 
         } catch (Exception ex) {
-            observabilityManager.closeSpan(span, ex);
+            //observabilityManager.closeSpan(span, ex);
             throw ex;
         } finally {
             span.end();

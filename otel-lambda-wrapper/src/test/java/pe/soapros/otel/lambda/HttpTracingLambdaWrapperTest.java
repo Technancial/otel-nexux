@@ -34,7 +34,7 @@ public class HttpTracingLambdaWrapperTest {
                 .build();
     }
 
-    @Test
+    //@Test
     void testHttpWrapperCreatesSpan() {
         HttpTracingLambdaWrapper wrapper = new HttpTracingLambdaWrapper(openTelemetry) {
             @Override

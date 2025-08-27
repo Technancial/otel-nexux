@@ -1,17 +1,19 @@
 package pe.soapros.otel.lambda.infrastructure;
 
+import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyResponseEvent;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanBuilder;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
 import lombok.Getter;
 import pe.soapros.otel.core.domain.LoggerService;
-import pe.soapros.otel.core.infrastructure.OpenTelemetryManager;
-import pe.soapros.otel.core.infrastructure.BusinessContext;
-import pe.soapros.otel.core.infrastructure.BusinessContextEnricher;
+import pe.soapros.otel.core.domain.TraceSpan;
+import pe.soapros.otel.core.domain.TracerService;
+import pe.soapros.otel.core.infrastructure.*;
 import pe.soapros.otel.logs.infrastructure.BusinessContextLogEnricher;
 
 import java.util.HashMap;
@@ -20,44 +22,108 @@ import java.util.Optional;
 
 import static pe.soapros.otel.lambda.infrastructure.ObservabilityConstants.*;
 
+/**
+ * OBSERVABILITY MANAGER: Facade principal para la observabilidad en Lambda
+ * <p>
+ * Esta clase encapsula todas las funcionalidades de observabilidad específicas
+ * para AWS Lambda con API Gateway
+ */
 @Getter
 public class ObservabilityManager {
-    
-    private final LoggerService loggerService;
+
     private final OpenTelemetry openTelemetry;
+    private final LoggerService loggerService;
+    private final TracerService tracerService;
+    private final ResponseHttpEnricher responseHttpEnricher;
+    private final SubSpanExecutor subSpanExecutor;
+    private final LambdaObservabilityConfig config;
+
     
-    public ObservabilityManager(OpenTelemetry openTelemetry, String instrumentationName) {
+    public ObservabilityManager(OpenTelemetry openTelemetry,
+                                String instrumentationName,
+                                LambdaObservabilityConfig config) {
+
         this.openTelemetry = openTelemetry;
+        this.config = config != null ? config : LambdaObservabilityConfig.defaultForLambda();
+
         // Usar el logger service centralizado que ya incluye trace correlation
-        this.loggerService = new pe.soapros.otel.core.infrastructure.OpenTelemetryLoggerService(
+        /*this.loggerService = new pe.soapros.otel.core.infrastructure.OpenTelemetryLoggerService(
             openTelemetry.getLogsBridge().get(instrumentationName),
             instrumentationName,
             true // Enable trace correlation
-        );
+        );*/
+        this.loggerService = createLoggerService(openTelemetry, instrumentationName);
+        this.tracerService = createTracerService();
+        this.responseHttpEnricher = createResponseEnricher(this.config);
+        this.subSpanExecutor = createSubSpanExecutor(this.config);
     }
-    
-    public static ObservabilityManager fromManager(String instrumentationName) {
-        if (!OpenTelemetryManager.isInitialized()) {
-            throw new IllegalStateException("OpenTelemetryManager not initialized. Call OpenTelemetryManager.initialize() first.");
-        }
-        
-        return new ObservabilityManager(
-            OpenTelemetryManager.getInstance().getOpenTelemetry(), 
-            instrumentationName
-        );
-    }
-    
+
     public static ObservabilityManager fromManagerWithDefaults() {
         if (!OpenTelemetryManager.isInitialized()) {
-            throw new IllegalStateException("OpenTelemetryManager not initialized. Call OpenTelemetryManager.initialize() first.");
+            throw new IllegalStateException("OpenTelemetryManager not initialized");
         }
-        
+
         var manager = OpenTelemetryManager.getInstance();
         return new ObservabilityManager(
-            manager.getOpenTelemetry(), 
-            manager.getConfig().getServiceName()
+                manager.getOpenTelemetry(),
+                manager.getConfig().getServiceName(),
+                LambdaObservabilityConfig.defaultForLambda()
         );
     }
+
+    public static ObservabilityManager fromManagerForDevelopment() {
+        if (!OpenTelemetryManager.isInitialized()) {
+            throw new IllegalStateException("OpenTelemetryManager not initialized");
+        }
+
+        var manager = OpenTelemetryManager.getInstance();
+        return new ObservabilityManager(
+                manager.getOpenTelemetry(),
+                manager.getConfig().getServiceName(),
+                LambdaObservabilityConfig.developmentConfig()
+        );
+    }
+
+    public static ObservabilityManager fromManagerForProduction() {
+        if (!OpenTelemetryManager.isInitialized()) {
+            throw new IllegalStateException("OpenTelemetryManager not initialized");
+        }
+
+        var manager = OpenTelemetryManager.getInstance();
+        return new ObservabilityManager(
+                manager.getOpenTelemetry(),
+                manager.getConfig().getServiceName(),
+                LambdaObservabilityConfig.performanceOptimized()
+        );
+    }
+
+    public static ObservabilityManager fromManager(LambdaObservabilityConfig config) {
+        if (!OpenTelemetryManager.isInitialized()) {
+            throw new IllegalStateException("OpenTelemetryManager not initialized");
+        }
+
+        var manager = OpenTelemetryManager.getInstance();
+        return new ObservabilityManager(
+                manager.getOpenTelemetry(),
+                manager.getConfig().getServiceName(),
+                config
+        );
+    }
+
+    /**
+     * 🎯 NUEVA: Enriquecimiento automático de span con respuesta HTTP
+     */
+    public void enrichSpanWithResponse(TraceSpan span, APIGatewayProxyResponseEvent response) {
+        responseHttpEnricher.enrichWithApiGatewayResponse(span, response);
+
+        if (config.isVerboseLogging()) {
+            logInfo("Span enriched with HTTP response", Map.of(
+                    "http.status_code", String.valueOf(response.getStatusCode()),
+                    "span.id", span.getSpanId()
+            ));
+        }
+    }
+
     public void setupQuickBusinessContext(String businessId, String userId, String operation) {
         // Enriquecer MDC con contexto básico
         BusinessContext context = BusinessContext.builder()
@@ -117,38 +183,14 @@ public class ObservabilityManager {
         ));
     }
 
-    public void updateBusinessId(String businessId) {
-        BusinessContextEnricher.updateBusinessId(businessId);
-
-        // Actualizar span actual
-        Span currentSpan = Span.current();
-        if (currentSpan.getSpanContext().isValid()) {
-            currentSpan.setAttribute(BUSINESS_ID, businessId);
-        }
-
-        logDebug("Business ID updated", Map.of("business.id", businessId));
-    }
-
-    public void updateOperation(String operation) {
-        BusinessContextEnricher.updateOperation(operation);
-
-        // Actualizar span actual
-        Span currentSpan = Span.current();
-        if (currentSpan.getSpanContext().isValid()) {
-            currentSpan.setAttribute(OPERATION, operation);
-        }
-
-        logDebug("Operation updated", Map.of("operation", operation));
-    }
-
-    public Optional<String> getCurrentBusinessId() {
-        return BusinessContextLogEnricher.getCurrentBusinessId();
-    }
-
-    public Map<String, String> getCompleteContextInfo() {
-        return BusinessContextLogEnricher.getCompleteContextInfo();
-    }
-
+    /**
+     * @deprecated Use TracerService.startSpan() with SubSpanExecutor instead
+     * Este método será removido en la próxima versión mayor.
+     * <p>
+     * RAZÓN: La responsabilidad de crear spans debe estar en TracerService.
+     * Este método mezcla responsabilidades de logging y span creation.
+     */
+    @Deprecated
     public Span startSpanWithContext(String spanName, Context parentContext, Tracer tracer) {
         Map<String, String> logAttributes = new HashMap<>();
         logAttributes.put("span.name", spanName);
@@ -160,7 +202,15 @@ public class ObservabilityManager {
                 .setParent(parentContext)
                 .startSpan();
     }
-    
+
+    /**
+     * @deprecated Use TraceSpan.recordException() and TraceSpan.setStatus() directly
+     * Este método será removido en la próxima versión mayor.
+     * <p>
+     * RAZÓN: Esta funcionalidad ya está disponible en la abstracción TraceSpan.
+     * No necesitamos duplicar la lógica aquí.
+     */
+    @Deprecated(since = "2.0", forRemoval = true)
     public void closeSpan(Span span, Exception exception) {
         if (span == null) return;
         
@@ -196,11 +246,13 @@ public class ObservabilityManager {
                 Map.of("operation", "span.close.error", "error.type", e.getClass().getSimpleName()));
         }
     }
-    
+
+    @Deprecated
     public void closeSpanSuccessfully(Span span) {
         closeSpanSuccessfully(span, null);
     }
-    
+
+    @Deprecated
     public void closeSpanSuccessfully(Span span, String message) {
         if (span == null) return;
         
@@ -226,7 +278,8 @@ public class ObservabilityManager {
                 Map.of("operation", "span.close.success.error", "error.type", e.getClass().getSimpleName()));
         }
     }
-    
+
+    @Deprecated
     public void addPerformanceInfo(Span span, long durationMs, String operation) {
         if (span == null) return;
         
@@ -257,7 +310,8 @@ public class ObservabilityManager {
                 Map.of("operation", "performance.info.error", "error.type", e.getClass().getSimpleName()));
         }
     }
-    
+
+    @Deprecated
     public void addSizeInfo(Span span, long requestSize, long responseSize) {
         if (span == null) return;
         
@@ -287,7 +341,8 @@ public class ObservabilityManager {
                 Map.of("operation", "size.info.error", "error.type", e.getClass().getSimpleName()));
         }
     }
-    
+
+    @Deprecated
     public void addUserInfo(Span span, String userId, String userRole, String tenantId) {
         if (span == null) return;
         
@@ -315,7 +370,8 @@ public class ObservabilityManager {
                 Map.of("operation", "user.info.error", "error.type", e.getClass().getSimpleName()));
         }
     }
-    
+
+    @Deprecated
     public void addBusinessContext(Span span, String businessOperation, String entityId, String entityType) {
         if (span == null) return;
         
@@ -345,22 +401,18 @@ public class ObservabilityManager {
     }
     
     public void logLambdaStart(String functionName, String requestId) {
-        Map<String, String> logAttributes = new HashMap<>();
-        logAttributes.put("lambda.function_name", functionName);
-        logAttributes.put("lambda.request_id", requestId);
-        logAttributes.put("operation", "lambda.start");
-        
-        loggerService.info("Lambda function started", logAttributes);
+        logInfo("Lambda function started", Map.of(
+                "lambda.function_name", functionName,
+                "lambda.request_id", requestId
+        ));
     }
     
     public void logLambdaEnd(String functionName, String requestId, long durationMs) {
-        Map<String, String> logAttributes = new HashMap<>();
-        logAttributes.put("lambda.function_name", functionName);
-        logAttributes.put("lambda.request_id", requestId);
-        logAttributes.put("lambda.duration_ms", String.valueOf(durationMs));
-        logAttributes.put("operation", "lambda.end");
-        
-        loggerService.info("Lambda function completed", logAttributes);
+        logInfo("Lambda function completed", Map.of(
+                "lambda.function_name", functionName,
+                "lambda.request_id", requestId,
+                "lambda.duration_ms", String.valueOf(durationMs)
+        ));
 
         BusinessContextEnricher.clearMDC();
     }
@@ -372,6 +424,125 @@ public class ObservabilityManager {
         logAttributes.put("operation", "lambda.cold_start");
         
         loggerService.info("Cold start detected", logAttributes);
+    }
+
+    public void updateBusinessId(String businessId) {
+        BusinessContextEnricher.updateBusinessId(businessId);
+
+        // Actualizar span actual
+        Span currentSpan = Span.current();
+        if (currentSpan.getSpanContext().isValid()) {
+            currentSpan.setAttribute(BUSINESS_ID, businessId);
+        }
+
+        logDebug("Business ID updated", Map.of("business.id", businessId));
+    }
+
+    public void updateOperation(String operation) {
+        BusinessContextEnricher.updateOperation(operation);
+
+        // Actualizar span actual
+        Span currentSpan = Span.current();
+        if (currentSpan.getSpanContext().isValid()) {
+            currentSpan.setAttribute(OPERATION, operation);
+        }
+
+        logDebug("Operation updated", Map.of("operation", operation));
+    }
+
+    public Optional<String> getCurrentBusinessId() {
+        return BusinessContextLogEnricher.getCurrentBusinessId();
+    }
+
+    public Map<String, String> getCompleteContextInfo() {
+        return BusinessContextLogEnricher.getCompleteContextInfo();
+    }
+
+    // =============== MÉTODOS PRIVADOS DE SOPORTE ===============
+
+    private LoggerService createLoggerService(OpenTelemetry openTelemetry, String instrumentationName) {
+        return new pe.soapros.otel.core.infrastructure.OpenTelemetryLoggerService(
+                openTelemetry.getLogsBridge().get(instrumentationName),
+                instrumentationName,
+                true // Enable trace correlation
+        );
+    }
+
+    private TracerService createTracerService() {
+        return OpenTelemetryManager.getInstance().getTracerService();
+    }
+
+    private ResponseHttpEnricher createResponseEnricher(LambdaObservabilityConfig config) {
+        var builder = ResponseHttpEnricher.builder();
+
+        if (config.getCustomResponseHeaders() != null) {
+            builder.includeCustomHeaders(config.getCustomResponseHeaders().toArray(String[]::new));
+        }
+
+        if (config.isIncludeResponseBody()) {
+            builder.includeResponseBody(config.getMaxResponseBodyLength());
+        }
+
+        return builder.build();
+    }
+
+    private SubSpanExecutor createSubSpanExecutor(LambdaObservabilityConfig config) {
+        return new SubSpanExecutor(
+                tracerService,
+                config.isEnableSubSpanEvents(),
+                config.isEnableSubSpanMetrics()
+        );
+    }
+
+    public TraceSpan createLambdaSpanWithContext(String spanName,
+                                                 Context parentContext,
+                                                 Map<String, String> attributes) {
+        Tracer tracer = openTelemetry.getTracer(
+                OpenTelemetryManager.getInstance().getConfig().getServiceName()
+        );
+
+        SpanBuilder spanBuilder = tracer.spanBuilder(spanName);
+
+        if (parentContext != null && parentContext != Context.root()) {
+
+            spanBuilder.setParent(parentContext);
+
+            if (config.isVerboseLogging()) {
+                logDebug("Creating Lambda span with parent context", Map.of(
+                        "span.name", spanName,
+                        "has.parent", "true"
+                ));
+            }
+        } else {
+            if (config.isVerboseLogging()) {
+                logDebug("Creating Lambda span without parent context", Map.of(
+                        "span.name", spanName,
+                        "has.parent", "false"
+                ));
+            }
+        }
+
+        Span span = spanBuilder.startSpan();
+
+        if (attributes != null) {
+            attributes.forEach(span::setAttribute);
+        }
+
+        return new OpenTelemetryTraceSpan(span);
+    }
+
+    private void enrichSpanWithQuickContext(Span span, String businessId, String userId, String operation) {
+        if (businessId != null) span.setAttribute("business.id", businessId);
+        if (userId != null) span.setAttribute("user.id", userId);
+        if (operation != null) span.setAttribute("operation", operation);
+    }
+
+    private void enrichSpanWithBusinessContext(Span span, BusinessContext context) {
+        if (context.businessId() != null) span.setAttribute("business.id", context.businessId());
+        if (context.userId() != null) span.setAttribute("user.id", context.userId());
+        if (context.operation() != null) span.setAttribute("operation", context.operation());
+        if (context.tenantId() != null) span.setAttribute("tenant.id", context.tenantId());
+        if (context.correlationId() != null) span.setAttribute("correlation.id", context.correlationId());
     }
 
     // ==================== MÉTODOS AUXILIARES PARA LOGGING ====================
@@ -406,45 +577,6 @@ public class ObservabilityManager {
 
     // ==================== MÉTODOS PRIVADOS PARA EXTRACCIÓN DE CONTEXTO ====================
 
-    private void enrichSpanWithQuickContext(Span span, String businessId, String userId, String operation) {
-        try {
-            if (businessId != null) {
-                span.setAttribute(BUSINESS_ID, businessId);
-            }
-            if (userId != null) {
-                span.setAttribute(USER_ID, userId);
-            }
-            if (operation != null) {
-                span.setAttribute(OPERATION, operation);
-            }
-        } catch (Exception e) {
-            logError("Error enriching span with quick context: " + e.getMessage(), Map.of());
-        }
-    }
-
-    private void enrichSpanWithBusinessContext(Span span, BusinessContext context) {
-        if (span == null || context == null) return;
-
-        try {
-            if (context.businessId() != null) {
-                span.setAttribute(BUSINESS_ID, context.businessId());
-            }
-            if (context.userId() != null) {
-                span.setAttribute(USER_ID, context.userId());
-            }
-            if (context.operation() != null) {
-                span.setAttribute(OPERATION, context.operation());
-            }
-            if (context.tenantId() != null) {
-                span.setAttribute(TENANT_ID, context.tenantId());
-            }
-            if (context.correlationId() != null) {
-                span.setAttribute(CORRELATION_ID, context.correlationId());
-            }
-        } catch (Exception e) {
-            logError("Error enriching span with business context: " + e.getMessage(), Map.of());
-        }
-    }
 
     private String extractBusinessId(Map<String, String> headers) {
         return getHeaderValue(headers, "X-Business-ID", "x-business-id", "Business-ID", "business-id");

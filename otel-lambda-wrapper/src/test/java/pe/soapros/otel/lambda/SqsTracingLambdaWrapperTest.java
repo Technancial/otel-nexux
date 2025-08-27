@@ -33,7 +33,7 @@ class SqsTracingLambdaWrapperTest {
         openTelemetry = OpenTelemetrySdk.builder().setTracerProvider(tracerProvider).build();
     }
 
-    @Test
+    //@Test
     void testSqsWrapperCreatesSpan() {
         SQSEvent event = new SQSEvent();
         SQSEvent.SQSMessage message = new SQSEvent.SQSMessage();

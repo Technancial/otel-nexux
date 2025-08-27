@@ -61,7 +61,16 @@ public abstract class HttpTracingLambdaWrapper implements RequestHandler<APIGate
                 "pe.soapros.otel.lambda.http",
                 Optional.ofNullable(serviceVersion).orElse("1.0.0")
         );
-        this.observabilityManager = new BusinessAwareObservabilityManager(openTelemetry, "http-lambda-wrapper");
+
+        LambdaObservabilityConfig lambdaObservabilityConfig = LambdaObservabilityConfig.builder()
+                .customResponseHeaders("x-correlation-id", "x-request-id", "x-processing-time")
+                .includeResponseBody(512)
+                .verboseLogging(true) // Para desarrollo
+                .enableSubSpanEvents(true)
+                .enableSubSpanMetrics(true)
+                .build();
+
+        this.observabilityManager = new BusinessAwareObservabilityManager(openTelemetry, "http-lambda-wrapper", lambdaObservabilityConfig);
 
         // Inicializar metrics factory y lambda metrics collector
         MetricsFactory metricsFactory = MetricsFactory.create(
@@ -170,7 +179,7 @@ public abstract class HttpTracingLambdaWrapper implements RequestHandler<APIGate
 
         } catch (Exception ex) {
             // Use observability manager for error handling
-            observabilityManager.closeSpan(span, ex);
+            //observabilityManager.closeSpan(span, ex);
             
             // Finalizar métricas de Lambda con error
             lambdaMetricsCollector.endExecution(context, false, ex);

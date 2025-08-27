@@ -6,6 +6,7 @@ import pe.soapros.otel.core.domain.TraceSpan;
 
 import java.util.Map;
 
+@Deprecated
 public class OpenTelemetryTraceSpan implements TraceSpan {
     private final Span span;
 

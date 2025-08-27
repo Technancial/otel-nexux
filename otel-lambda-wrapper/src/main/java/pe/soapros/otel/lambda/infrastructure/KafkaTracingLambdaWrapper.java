@@ -49,7 +49,16 @@ public abstract class KafkaTracingLambdaWrapper implements RequestHandler<KafkaE
                 "pe.soapros.otel.lambda.kafka",
                 Optional.ofNullable(serviceVersion).orElse("1.0.0")
         );
-        this.observabilityManager = new BusinessAwareObservabilityManager(openTelemetry, "kafka-lambda-wrapper");
+
+        LambdaObservabilityConfig lambdaObservabilityConfig = LambdaObservabilityConfig.builder()
+                .customResponseHeaders("x-correlation-id", "x-request-id", "x-processing-time")
+                .includeResponseBody(512)
+                .verboseLogging(true) // Para desarrollo
+                .enableSubSpanEvents(true)
+                .enableSubSpanMetrics(true)
+                .build();
+
+        this.observabilityManager = new BusinessAwareObservabilityManager(openTelemetry, "kafka-lambda-wrapper", lambdaObservabilityConfig);
         
         // Inicializar metrics factory y lambda metrics collector
         MetricsFactory metricsFactory = MetricsFactory.create(
@@ -129,7 +138,7 @@ public abstract class KafkaTracingLambdaWrapper implements RequestHandler<KafkaE
 
             } catch (Exception e) {
                 // Use observability manager for error handling
-                observabilityManager.closeSpan(span, e);
+                //observabilityManager.closeSpan(span, e);
                 throw e;
             } finally {
                 span.end();

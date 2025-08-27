@@ -48,7 +48,16 @@ public abstract class SqsTracingLambdaWrapper implements RequestHandler<SQSEvent
                 "pe.soapros.otel.lambda.sqs",
                 Optional.ofNullable(serviceVersion).orElse("1.0.0")
         );
-        this.observabilityManager = new BusinessAwareObservabilityManager(openTelemetry, "sqs-lambda-wrapper");
+
+        LambdaObservabilityConfig lambdaObservabilityConfig = LambdaObservabilityConfig.builder()
+                .customResponseHeaders("x-correlation-id", "x-request-id", "x-processing-time")
+                .includeResponseBody(512)
+                .verboseLogging(true) // Para desarrollo
+                .enableSubSpanEvents(true)
+                .enableSubSpanMetrics(true)
+                .build();
+
+        this.observabilityManager = new BusinessAwareObservabilityManager(openTelemetry, "sqs-lambda-wrapper", lambdaObservabilityConfig);
         
         // Inicializar metrics factory y lambda metrics collector
         MetricsFactory metricsFactory = MetricsFactory.create(
@@ -127,7 +136,7 @@ public abstract class SqsTracingLambdaWrapper implements RequestHandler<SQSEvent
 
         } catch (Exception ex) {
             // Use observability manager for error handling
-            observabilityManager.closeSpan(span, ex);
+            //observabilityManager.closeSpan(span, ex);
             throw ex;
         } finally {
             span.end();
